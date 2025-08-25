@@ -38,7 +38,7 @@ jobs:
 
       - name: Safety scan (JSON)
         run: |          
-          safety scan --file tests/bench_proj/requirements.vuln.txt --output json \
+          safety scan --file requirements.vuln.txt --output json \
             --output-file experiments/reports/safety_report.json
 
       # ---- pip-audit: richer metadata (may fail if pins are incompatible) ----
@@ -51,7 +51,7 @@ jobs:
         run: |
           start_ts=$(date +%s)
           # capture SCT with /usr/bin/time, write JSON to file
-          /usr/bin/time -f "SCT=%E" pip-audit -r tests/bench_proj/requirements.vuln.txt \
+          /usr/bin/time -f "SCT=%E" pip-audit -r requirements.vuln.txt \
             --progress-spinner off --format json > experiments/reports/pip_audit.json 2> experiments/reports/pip_audit_time.txt || true
           end_ts=$(date +%s)
           echo "T_START=$start_ts"   >> experiments/reports/metrics.env
