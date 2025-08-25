@@ -1,0 +1,84 @@
+name: Bench SCA Scan
+
+on:
+  push:
+    paths:
+      - "tests/bench_proj/**"
+      - ".github/workflows/sca-bench.yml"
+  pull_request:
+    paths:
+      - "tests/bench_proj/**"
+      - ".github/workflows/sca-bench.yml"
+  schedule:
+    - cron: "0 7 * * 1"   # every Monday 07:00 UTC (adjust as you like)
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Ensure reports folder
+        run: |
+          mkdir -p experiments/reports
+
+      # ---- SAFETY: fast, reads manifest file (no resolver headaches) ----
+      - name: Install Safety (scanner)
+        run: |
+          python -m pip install --upgrade pip
+          pip install "safety>=3"
+
+      - name: Safety scan (text & JSON)
+        run: |
+          safety scan --file tests/bench_proj/requirements.vuln.txt --output text \
+            | tee experiments/reports/safety_report.txt
+          safety scan --file tests/bench_proj/requirements.vuln.txt --output json \
+            --output-file experiments/reports/safety_report.json
+
+      # ---- pip-audit: richer metadata (may fail if pins are incompatible) ----
+      - name: Install pip-audit
+        run: |
+          pip install --upgrade pip-audit
+
+      - name: pip-audit (JSON) + measure scan time
+        shell: bash
+        run: |
+          start_ts=$(date +%s)
+          # capture SCT with /usr/bin/time, write JSON to file
+          /usr/bin/time -f "SCT=%E" pip-audit -r tests/bench_proj/requirements.vuln.txt \
+            --progress-spinner off --format json > experiments/reports/pip_audit.json 2> experiments/reports/pip_audit_time.txt || true
+          end_ts=$(date +%s)
+          echo "T_START=$start_ts"   >> experiments/reports/metrics.env
+          echo "T_END=$end_ts"       >> experiments/reports/metrics.env
+
+      # ---- Minimal metric extraction (counts only; full analysis is offline) ----
+      - name: Summarize findings
+        run: |
+          python - << 'PY'
+          import json, pathlib
+          p = pathlib.Path("experiments/reports/pip_audit.json")
+          if p.exists():
+            try:
+              data = json.loads(p.read_text())
+              vulns = data if isinstance(data, list) else data.get("dependencies", [])
+              print(f"pip-audit findings: {len(vulns)}")
+            except Exception as e:
+              print("pip-audit JSON parse issue:", e)
+          else:
+            print("pip-audit did not produce JSON (likely resolver conflicts).")
+          PY
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-scan-reports
+          path: experiments/reports/
+          if-no-files-found: warn
