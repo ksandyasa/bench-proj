@@ -26,10 +26,6 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Ensure reports folder
-        run: |
-          mkdir -p experiments/reports
-
       # ---- SAFETY: fast, reads manifest file (no resolver headaches) ----
       - name: Install Safety (scanner)
         run: |
@@ -38,8 +34,7 @@ jobs:
 
       - name: Safety scan (JSON)
         run: |          
-          safety scan --file requirements.vuln.txt --output json \
-            --output-file experiments/reports/safety_report.json
+          safety scan --file requirements.vuln.txt --output json > safety_report.json
 
       # ---- pip-audit: richer metadata (may fail if pins are incompatible) ----
       - name: Install pip-audit
@@ -52,17 +47,17 @@ jobs:
           start_ts=$(date +%s)
           # capture SCT with /usr/bin/time, write JSON to file
           /usr/bin/time -f "SCT=%E" pip-audit -r requirements.vuln.txt \
-            --progress-spinner off --format json > experiments/reports/pip_audit.json 2> experiments/reports/pip_audit_time.txt || true
+            --progress-spinner off --format json > pip_audit.json || true
           end_ts=$(date +%s)
-          echo "T_START=$start_ts"   >> experiments/reports/metrics.env
-          echo "T_END=$end_ts"       >> experiments/reports/metrics.env
+          echo "T_START=$start_ts"   >> metrics.env
+          echo "T_END=$end_ts"       >> metrics.env
 
       # ---- Minimal metric extraction (counts only; full analysis is offline) ----
       - name: Summarize findings
         run: |
           python - << 'PY'
           import json, pathlib
-          p = pathlib.Path("experiments/reports/pip_audit.json")
+          p = pathlib.Path("pip_audit.json")
           if p.exists():
             try:
               data = json.loads(p.read_text())
